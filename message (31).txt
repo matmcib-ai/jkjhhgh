@@ -1,0 +1,124 @@
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- ==================== FFLAG FIXES ====================
+task.spawn(function()
+    task.wait(0.5)
+    pcall(function()
+        for i = 1, 20 do
+            pcall(function() setfflag("SendsGoThroughConnection" .. i, false) end)
+            pcall(function() setfflag("ConnectViaConnectionInternal" .. i, false) end)
+        end
+    end)
+end)
+
+-- ==================== PERMANENT DESYNC ====================
+do
+    local Sync = require(game.ReplicatedStorage:WaitForChild("Packages"):WaitForChild("Synchronizer"))
+    for _, fn in pairs(Sync) do
+        if typeof(fn) == "function" and not isexecutorclosure(fn) then
+            local ok, ups = pcall(debug.getupvalues, fn)
+            if ok then
+                for i, v in pairs(ups) do
+                    if typeof(v) == "function" then
+                        local ok2, inner = pcall(debug.getupvalues, v)
+                        if ok2 then
+                            for _, val in pairs(inner) do
+                                if typeof(val) == "boolean" then
+                                    debug.setupvalue(fn, i, newcclosure(function() end))
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ==================== KLEINES MOGGER GUI ====================
+local screen = Instance.new("ScreenGui")
+screen.Name = "MoggerDesync"
+screen.ResetOnSpawn = false
+screen.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 50)
+frame.Position = UDim2.new(0.5, -110, 0, 15)
+frame.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+frame.BorderSizePixel = 0
+frame.Parent = screen
+
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
+
+local stroke = Instance.new("UIStroke", frame)
+stroke.Color = Color3.fromRGB(200, 20, 20)
+stroke.Thickness = 2
+stroke.Transparency = 0.2
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 1, 0)
+title.BackgroundTransparency = 1
+title.Text = "MOGGER DESYNC"
+title.TextColor3 = Color3.fromRGB(255, 80, 80)
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 15
+title.TextStrokeTransparency = 0.8
+
+local status = Instance.new("TextLabel", frame)
+status.Size = UDim2.new(1, 0, 0, 16)
+status.Position = UDim2.new(0, 0, 1, -16)
+status.BackgroundTransparency = 1
+status.Text = "● ACTIVE"
+status.TextColor3 = Color3.fromRGB(0, 255, 120)
+status.Font = Enum.Font.GothamBold
+status.TextSize = 12
+
+-- Draggable
+frame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local startPos = frame.Position
+        local dragStart = input.Position
+       
+        local conn = game:GetService("UserInputService").InputChanged:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseMovement then
+                local delta = inp.Position - dragStart
+                frame.Position = UDim2.new(
+                    startPos.X.Scale, startPos.X.Offset + delta.X,
+                    startPos.Y.Scale, startPos.Y.Offset + delta.Y
+                )
+            end
+        end)
+       
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                conn:Disconnect()
+            end
+        end)
+    end
+end)
+
+-- ==================== DESYNC HOOK (Zyro Style) ====================
+local lastUpdate = os.clock()
+local updateInterval = 4.0
+
+local function rakhook(packet)
+    if packet.PacketId == 0x1B then
+        local data = packet.AsBuffer
+        
+        if os.clock() - lastUpdate >= updateInterval then
+            lastUpdate = os.clock()
+            -- Update real position every 4 seconds
+        else
+            buffer.writeu32(data, 1, 0/0) -- NaN Desync
+            packet:SetData(data)
+        end
+    end
+end
+
+pcall(function() raknet.add_send_hook(rakhook) end)
+
+print("Mogger Desync - Permanent Active (Server Pos entfernt)")
